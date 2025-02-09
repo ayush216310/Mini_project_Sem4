@@ -109,12 +109,10 @@ class LinearOptimizerGUI:
             m = self.num_variables  # Number of decision variables.
             n = self.num_constraints  # Number of constraints.
 
-            # --- Gather Objective Function Coefficients ---
             objective = []
             for entry in self.objective_entries:
                 objective.append(float(entry.get()))
 
-            # --- Gather Constraint Data ---
             constraints_coeffs = []
             constraints_rhs = []
             constraints_type = []  # 1 for ">=", 2 for "<=", 3 for "="
@@ -135,7 +133,6 @@ class LinearOptimizerGUI:
                 else:
                     constraints_type.append(2)
 
-            # --- Build the Initial Simplex Tableau ---
             row_lim = n + 1
             col_lim = m + n + 2
             table = np.zeros((row_lim, col_lim))
@@ -145,9 +142,9 @@ class LinearOptimizerGUI:
                 table[i][col_lim - 1] = constraints_rhs[i]
             for i in range(n):
                 if constraints_type[i] != 3:
-                    if constraints_type[i] == 1:  # for ">=" add surplus (–1)
+                    if constraints_type[i] == 1:  # for ">=" subtract slack
                         table[i][m + i] = -1
-                    else:  # for "<=" add slack (+1)
+                    else:  # for "<=" add slack
                         table[i][m + i] = 1
 
             for j in range(m):
@@ -162,7 +159,6 @@ class LinearOptimizerGUI:
                 + ["z", "c"]
             )
 
-            # --- Helper Functions (with tolerance) ---
             tol = 1e-8
 
             def check(last_row):
@@ -180,7 +176,6 @@ class LinearOptimizerGUI:
                 for i in range(n):
                     if table[i][pivot_col] > tol:
                         ratio = table[i][col_lim - 1] / table[i][pivot_col]
-                        # Here we add the extra condition that ratio must be > 0.
                         if ratio < min_ratio and ratio > 0:
                             min_ratio = ratio
                             pivot_row = i
@@ -188,19 +183,19 @@ class LinearOptimizerGUI:
 
             iteration_details = ""
             iteration = 0
-
-            # Display initial tableau as ITERATION 0.
+            bounded=True
             df = pd.DataFrame(table, index=row_labels, columns=col_labels)
             iteration_details += f"ITERATION {iteration}:\n" + df.to_string() + "\n\n"
 
             while True:
                 pivot_col = check(table[n])
                 if pivot_col == -1:
-                    # No negative coefficient found → optimality reached.
+                    # if no negative we are done solving
                     break
                 pivot_row = check_ratio(table, pivot_col)
                 if pivot_row == -1:
                     iteration_details += "The solution is unbounded.\n"
+                    bounded=False
                     break
                 pivot = table[pivot_row][pivot_col]
                 table[pivot_row, :] = table[pivot_row, :] / pivot
@@ -213,20 +208,22 @@ class LinearOptimizerGUI:
                 iteration_details += f"ITERATION {iteration}:\n"
                 df = pd.DataFrame(table, index=row_labels, columns=col_labels)
                 iteration_details += df.to_string() + "\n\n"
-
-            solution_text = "Solution:\n"
-            for j in range(m):
-                column = table[:n, j]
-                ones = np.isclose(column, 1, atol=tol)
-                zeros = np.isclose(column, 0, atol=tol)
-                if np.sum(ones) == 1 and np.sum(zeros) == n - 1:
-                    row_index = np.where(ones)[0][0]
-                    value = table[row_index, col_lim - 1]
-                else:
-                    value = 0
-                solution_text += f"x{j+1} = {value:.2f}\n"
-            max_z = table[n][col_lim - 1]
-            solution_text += f"\nMaximized value of z: {max_z:.2f}\n"
+            if not bounded:
+                solution_text = "Solution is not bounded."    
+            else:
+                solution_text = "Solution:\n"
+                for j in range(m):
+                    column = table[:n, j]
+                    ones = np.isclose(column, 1, atol=tol)
+                    zeros = np.isclose(column, 0, atol=tol)
+                    if np.sum(ones) == 1 and np.sum(zeros) == n - 1:
+                        row_index = np.where(ones)[0][0]
+                        value = table[row_index, col_lim - 1]
+                    else:
+                        value = 0
+                    solution_text += f"x{j+1} = {value:.2f}\n"
+                max_z = table[n][col_lim - 1]
+                solution_text += f"\nMaximized value of z: {max_z:.2f}\n"
 
             self.result_text.delete("1.0", tk.END)
             self.result_text.insert(tk.END, iteration_details + "\n" + solution_text)
