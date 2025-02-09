@@ -47,7 +47,10 @@ class LinearOptimizerGUI:
             entry.pack(side=tk.LEFT)
             entry.insert(0, "1")
             self.objective_entries.append(entry)
-            tk.Label(self.objective_frame, text=f"x{i+1} +").pack(side=tk.LEFT)
+            if(i<self.num_variables-1):
+                tk.Label(self.objective_frame, text=f"x{i+1} +").pack(side=tk.LEFT)
+            else:
+                tk.Label(self.objective_frame, text=f"x{i+1}").pack(side=tk.LEFT)
 
     def create_constraint_entries(self):
         for widget in self.constraints_frame.winfo_children():
@@ -63,7 +66,10 @@ class LinearOptimizerGUI:
                 entry.pack(side=tk.LEFT)
                 entry.insert(0, "1")
                 row.append(entry)
-                tk.Label(frame, text=f"x{j+1} +").pack(side=tk.LEFT)
+                if(j<self.num_variables-1):
+                    tk.Label(frame, text=f"x{j+1} +").pack(side=tk.LEFT)
+                else:
+                    tk.Label(frame, text=f"x{j+1}").pack(side=tk.LEFT)
             ineq = ttk.Combobox(frame, values=["<=", ">=", "="], width=3)
             ineq.pack(side=tk.LEFT)
             ineq.set("<=")

@@ -71,9 +71,29 @@ def check_ratio(arr3,pk):
                 min_ratio = ratio
                 pt = i
     return pt
+#PRINT SOLN
+def print_solution(tableau, n):
+    constraints = tableau.iloc[:-1]#all rows till last
+    print("Solution:")
 
+    for variable in tableau.columns[:n]:
+        column_values = constraints[variable]#get all values corresponding to x1
+
+        number_of_ones = (column_values == 1).sum()#check if unit vecotr
+        all_others_zero = (column_values[column_values != 1] == 0).all()
+
+        if number_of_ones == 1 and all_others_zero:
+            row_index = column_values[column_values == 1].index[0]#figure out row of 1
+            value = tableau.loc[row_index, "c"]#get optimized value from that row
+        else:
+            value = 0
+
+        print(f"{variable} = {value}")
+    max_z = tableau.iloc[-1]["c"]#stored in bottom right
+    print(f"\nMaximized value of z: {max_z}")
 #WORKING
 def simplex(table1, row_lim, n):
+    k=0
     while check(table1[n]) != -1 :
         pc = check(table1[n])
         pr = check_ratio(table1,pc)
@@ -82,8 +102,10 @@ def simplex(table1, row_lim, n):
         for i in range(0, row_lim):
             if i != pr :
                 table1[i, :] -= (table1[i][pc]*table1[pr, :])
+        k+=1
+        print(f"ITERATION {k}:")
         print(df)
         print("\n")
-        time.sleep(3)
+    print_solution(df,n)
 
 simplex(table1, row_lim, n)
