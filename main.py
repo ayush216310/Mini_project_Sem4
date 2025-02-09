@@ -3,47 +3,50 @@ from tkinter import ttk, messagebox
 import numpy as np
 import pandas as pd
 
+
 class LinearOptimizerGUI:
     def __init__(self, master):
         self.master = master
         master.title("Linear Optimization - Simplex Method")
-        
+
         # default values
-        self.num_variables = 2      # Number of decision variables.
-        self.num_constraints = 2    # Number of constraints.
-        
-        self.objective_entries = []      
-        self.constraint_entries = []     
-        self.constraint_ineq_vars = []   
-        
+        self.num_variables = 2  # Number of decision variables.
+        self.num_constraints = 2  # Number of constraints.
+
+        self.objective_entries = []
+        self.constraint_entries = []
+        self.constraint_ineq_vars = []
+
         tk.Label(master, text="Number of Variables:").pack()
         self.var_entry = tk.Entry(master)
         self.var_entry.pack()
         self.var_entry.insert(0, str(self.num_variables))
         tk.Button(master, text="Set Variables", command=self.modify_variables).pack()
-        
+
         tk.Label(master, text="Number of Constraints:").pack()
         self.con_entry = tk.Entry(master)
         self.con_entry.pack()
         self.con_entry.insert(0, str(self.num_constraints))
-        tk.Button(master, text="Set Constraints", command=self.modify_constraints).pack()
-        
+        tk.Button(
+            master, text="Set Constraints", command=self.modify_constraints
+        ).pack()
+
         tk.Label(master, text="Objective Function (Maximize):").pack()
         self.objective_frame = tk.Frame(master)
         self.objective_frame.pack()
         self.create_objective_entries()
-        
+
         tk.Label(master, text="Constraints:").pack()
         self.constraints_frame = tk.Frame(master)
         self.constraints_frame.pack()
         self.create_constraint_entries()
-        
+
         self.solve_button = tk.Button(master, text="Solve", command=self.run_simplex)
         self.solve_button.pack()
 
         self.result_text = tk.Text(master, height=25, width=80)
         self.result_text.pack()
-    
+
     def create_objective_entries(self):
         for widget in self.objective_frame.winfo_children():
             widget.destroy()
@@ -57,7 +60,7 @@ class LinearOptimizerGUI:
                 tk.Label(self.objective_frame, text=f"x{i+1} +").pack(side=tk.LEFT)
             else:
                 tk.Label(self.objective_frame, text=f"x{i+1}").pack(side=tk.LEFT)
-    
+
     def create_constraint_entries(self):
         for widget in self.constraints_frame.winfo_children():
             widget.destroy()
@@ -85,7 +88,7 @@ class LinearOptimizerGUI:
             rhs.insert(0, "0")
             row_entries.append(rhs)
             self.constraint_entries.append(row_entries)
-    
+
     def modify_variables(self):
         try:
             self.num_variables = int(self.var_entry.get())
@@ -93,28 +96,28 @@ class LinearOptimizerGUI:
             self.create_constraint_entries()
         except ValueError:
             messagebox.showerror("Error", "Enter a valid number of variables.")
-    
+
     def modify_constraints(self):
         try:
             self.num_constraints = int(self.con_entry.get())
             self.create_constraint_entries()
         except ValueError:
             messagebox.showerror("Error", "Enter a valid number of constraints.")
-    
+
     def run_simplex(self):
         try:
-            m = self.num_variables      # Number of decision variables.
-            n = self.num_constraints    # Number of constraints.
-            
+            m = self.num_variables  # Number of decision variables.
+            n = self.num_constraints  # Number of constraints.
+
             # --- Gather Objective Function Coefficients ---
             objective = []
             for entry in self.objective_entries:
                 objective.append(float(entry.get()))
-            
+
             # --- Gather Constraint Data ---
             constraints_coeffs = []
             constraints_rhs = []
-            constraints_type = []   # 1 for ">=", 2 for "<=", 3 for "="
+            constraints_type = []  # 1 for ">=", 2 for "<=", 3 for "="
             for i, row in enumerate(self.constraint_entries):
                 coeffs = []
                 for j in range(m):
@@ -131,7 +134,7 @@ class LinearOptimizerGUI:
                     constraints_type.append(3)
                 else:
                     constraints_type.append(2)
-            
+
             # --- Build the Initial Simplex Tableau ---
             row_lim = n + 1
             col_lim = m + n + 2
@@ -149,14 +152,19 @@ class LinearOptimizerGUI:
 
             for j in range(m):
                 table[n][j] = -1 * objective[j]
-            table[n][col_lim - 2] = 1 
-            table[n][col_lim - 1] = 0  
+            table[n][col_lim - 2] = 1
+            table[n][col_lim - 1] = 0
 
             row_labels = [f"Constraint-{i+1}" for i in range(n)] + ["Function"]
-            col_labels = [f"x{j+1}" for j in range(m)] + [f"s{i+1}" for i in range(n)] + ["z", "c"]
+            col_labels = (
+                [f"x{j+1}" for j in range(m)]
+                + [f"s{i+1}" for i in range(n)]
+                + ["z", "c"]
+            )
 
             # --- Helper Functions (with tolerance) ---
             tol = 1e-8
+
             def check(last_row):
                 min_val = 0
                 pos = -1
@@ -165,9 +173,9 @@ class LinearOptimizerGUI:
                         min_val = last_row[i]
                         pos = i
                 return pos
-            
+
             def check_ratio(table, pivot_col):
-                min_ratio = float('inf')
+                min_ratio = float("inf")
                 pivot_row = -1
                 for i in range(n):
                     if table[i][pivot_col] > tol:
@@ -177,7 +185,7 @@ class LinearOptimizerGUI:
                             min_ratio = ratio
                             pivot_row = i
                 return pivot_row
-            
+
             iteration_details = ""
             iteration = 0
 
@@ -198,7 +206,9 @@ class LinearOptimizerGUI:
                 table[pivot_row, :] = table[pivot_row, :] / pivot
                 for i in range(row_lim):
                     if i != pivot_row:
-                        table[i, :] = table[i, :] - table[i][pivot_col] * table[pivot_row, :]
+                        table[i, :] = (
+                            table[i, :] - table[i][pivot_col] * table[pivot_row, :]
+                        )
                 iteration += 1
                 iteration_details += f"ITERATION {iteration}:\n"
                 df = pd.DataFrame(table, index=row_labels, columns=col_labels)
@@ -220,9 +230,10 @@ class LinearOptimizerGUI:
 
             self.result_text.delete("1.0", tk.END)
             self.result_text.insert(tk.END, iteration_details + "\n" + solution_text)
-        
+
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
 
 root = tk.Tk()
 gui = LinearOptimizerGUI(root)
