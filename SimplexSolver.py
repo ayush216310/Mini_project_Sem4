@@ -2,7 +2,7 @@ class SimplexTable:
     def __init__(self, matrix, column_vecs):
         self.matrix = matrix
         self.column_vecs = column_vecs
-
+        
         if not (type(self.matrix) == list and all(type(row) == list for row in self.matrix)):
             raise ValueError("Needs to be a 2D list")
 
@@ -12,6 +12,8 @@ class SimplexTable:
         num_rows = len(self.matrix)
         if not all(len(row) == num_rows for row in self.matrix):
             raise ValueError("Matrix must be square (n x n)")
+
+        self.n=len(self.matrix[0])
 
         if not (type(self.column_vecs) == list and all(type(col) == list for col in self.column_vecs)):
             raise ValueError("Column vectors must be a list of lists")
@@ -49,7 +51,31 @@ class SimplexTable:
         for col in self.column_vecs:
             col[target_row] = col[target_row] - factor * col[source_row]
             
+    
+    def find_pivot_col(self):
+        last_row=self.matrix[-1]
+        min_val=min(last_row)
+        if min_val<0:
+            return last_row.index(min_val)
+        else:
+            return None
+        
+    def find_pivot_row(self, pivot_col):
+        min_ratio = float('inf')
+        pivot_row = None
+        
+        for i in range(self.n - 1):
+            denominator = self.matrix[i][pivot_col]
+            rhs = self.matrix[i][self.n - 1]
             
+            if denominator != 0: 
+                ratio = rhs / denominator
+                if ratio >= 0 and ratio < min_ratio:
+                    min_ratio = ratio
+                    pivot_row = i
+
+        return pivot_row
+        
 #Testing Code
 matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 column_vecs = [[10, 11, 12], [13, 14, 15]]
