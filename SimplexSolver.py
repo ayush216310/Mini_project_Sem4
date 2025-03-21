@@ -1,6 +1,5 @@
 class SimplexSolver:
     def __init__(self, objective_func, constraint, ineq, tolerance=1e-6):
-
         self.objective_func = objective_func
         self.constraints = constraint
         self.ineq = ineq
@@ -49,13 +48,12 @@ class SimplexSolver:
         return abs(value) < self.tolerance
 
     def is_positive(self, value):
-        return value > -self.tolerance
+        return value > self.tolerance  
     
     def is_negative(self, value):
-        return value < +self.tolerance
+        return value < -self.tolerance  
 
     def create_simplex_table(self):
-
         self.total_variables = self.num_variables + len(self.col_vectors)
 
         self.simplex_table = []
@@ -92,7 +90,7 @@ class SimplexSolver:
                 self.non_basis_variables.remove(col_idx)
                 col_idx += 1
             elif self.ineq[i] == 3:  
-                col_idx += 1
+                col_idx += 1  # Skip surplus variable
                 self.basis_variables.append(col_idx)
                 self.non_basis_variables.remove(col_idx)
                 col_idx += 1
@@ -100,9 +98,15 @@ class SimplexSolver:
                 self.basis_variables.append(col_idx)
                 self.non_basis_variables.remove(col_idx)
                 col_idx += 1
-    
+
+        M = 99999.999  # The big M value
+        for i in range(self.num_constraints):
+            var_idx = self.basis_variables[i]
+            if var_idx < len(self.variable_types) and self.variable_types[var_idx] == 'artificial':
+                for j in range(self.total_variables + 1):
+                    self.simplex_table[-1][j] -= M * self.simplex_table[i][j]
+            
     def get_tableau_string(self):
-        """Return a string representation of the current tableau."""
         s = ""
         header = []
         for i in range(self.total_variables):
@@ -196,20 +200,16 @@ class SimplexSolver:
             self.pivot(pivot_row, pivot_col)
             iteration += 1
             self.log += f"After iteration {iteration}:\n" + self.get_tableau_string() + "\n"
-        
-        # Log the final tableau.
+
         self.log += "Final Tableau:\n" + self.get_tableau_string() + "\n"
-        
+
         for i, basis_var in enumerate(self.basis_variables):
             var_index = basis_var
             if var_index < len(self.variable_types) and self.variable_types[var_index] == 'artificial':
                 if self.is_positive(self.simplex_table[i][-1]):
                     self.log += "Infeasible solution detected: artificial variable remains in basis.\n"
                     return "Infeasible solution"
-                
-        if iteration < max_iterations:
-            print(self.log)
-        
+
         solution = [0.0] * self.num_variables
         for i, var in enumerate(self.basis_variables):
             if var < self.num_variables:
@@ -227,6 +227,7 @@ class SimplexSolver:
     
     def print_tableau(self):
         print(self.get_tableau_string())
+
         
 objective_function = [3, 5]
 
@@ -240,13 +241,15 @@ inequality_types = [1, 1]
 
 solver = SimplexSolver(objective_function, constraints, inequality_types)
 
+
 result = solver.solve()
-
+print(solver.log)
 print("Solution:")
-print(f"x1 = {float(result['solution'][0])}")
-print(f"x2 = {float(result['solution'][1])}")
-print(f"Objective value = {float(result['objective_value'])}")
 
+for i, val in enumerate(result['solution']):
+    if i < len(result['solution']):
+        print(f"x{i+1} = {float(val):0.3f}")
+print(f"Objective value = {float(result['objective_value']):0.3f}")
 
 objective_function = [2, 3, 4]
 
@@ -260,36 +263,36 @@ inequality_types = [1, 3, 2]
 
 solver = SimplexSolver(objective_function, constraints, inequality_types)
 
-result = solver.solve()
 
+result = solver.solve()
+print(solver.log)
 print("Solution:")
-try:
-    for i, val in enumerate(result['solution']):
-        if i < len(result['solution']):
-            print(f"x{i+1} = {float(val)}")
-    print(f"Objective value = {float(result['objective_value'])}")
-except:
-    print("Infeasibile Solution")
+
+for i, val in enumerate(result['solution']):
+    if i < len(result['solution']):
+        print(f"x{i+1} = {float(val):0.3f}")
+print(f"Objective value = {float(result['objective_value']):0.3f}")
+
 objective_function = [2, 3, 4]
+objective_function = [0.4,0.5]
 
 constraints = [
-    [1, 1, 1, 10],   
-    [1, 1, 1, 15],  
-    [1, 3, 1, 30]    
+    [0.3,0.1,2.7],   
+    [0.5,0.5,  6],  
+    [0.6,0.4,  6]    
 ]
 
-inequality_types = [2, 2, 1] 
+inequality_types = [1, 2, 3] 
 
 solver = SimplexSolver(objective_function, constraints, inequality_types)
 
 result = solver.solve()
-
+print(solver.log)
 print("Solution:")
-try:
-    for i, val in enumerate(result['solution']):
-        if i < len(result['solution']):
-            print(f"x{i+1} = {float(val)}")
-    print(f"Objective value = {float(result['objective_value'])}")
-except:
-    print("Infeasibile Solution")
+
+for i, val in enumerate(result['solution']):
+    if i < len(result['solution']):
+        print(f"x{i+1} = {float(val):0.3f}")
+print(f"Objective value = {float(result['objective_value']):0.3f}")
+
 objective_function = [2, 3, 4]
