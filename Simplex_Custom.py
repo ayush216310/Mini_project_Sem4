@@ -314,9 +314,9 @@ class SimplexSolverGUI:
                 entry.insert(0, "1")
                 row_entries.append(entry)
                 if j < self.num_variables - 1:
-                    tk.Label(frame, text=f"x{i+1} +").pack(side=tk.LEFT)
+                    tk.Label(frame, text=f"x{j+1} +").pack(side=tk.LEFT)
                 else:
-                    tk.Label(frame, text=f"x{i+1}").pack(side=tk.LEFT)
+                    tk.Label(frame, text=f"x{j+1}").pack(side=tk.LEFT)
             ineq = ttk.Combobox(frame, values=["<=", ">=", "="], width=3)
             ineq.pack(side=tk.LEFT, padx=5)
             ineq.set("<=")
