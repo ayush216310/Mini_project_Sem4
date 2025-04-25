@@ -1,282 +1,195 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import copy
+import math
 
 class SimplexSolver:
     def __init__(self, objective_func, constraint, ineq, is_maximization=True, tolerance=1e-6):
-        self.objective_func = objective_func
-        self.constraints = constraint
-        self.ineq = ineq
-        self.is_maximization = is_maximization
-        self.num_variables = len(objective_func)
-        self.num_constraints = len(constraint)
-        self.tolerance = tolerance
+        self.is_min = not is_maximization
+        self.sign = -1 if self.is_min else 1
+        self.objective = [self.sign * c for c in objective_func]
+        self.orig_objective = list(objective_func)
+        self.constraints = [list(row) for row in constraint]
+        self.ineq_codes = list(ineq)
+        self.tol = tolerance
         self.log = ""
-        self.col_vectors = []
-        self.variable_types = []
-        self.variable_names = []
+        self._build_tableau()
 
-        for i in range(self.num_variables):
-            self.variable_types.append('original')
-            self.variable_names.append(f'x{i+1}')
+    def _fmt(self, x):
+        return f"{x:9.3f}"
 
-        for i in range(self.num_constraints):
-            if self.ineq[i] == 1:
-                col_vector = [0] * self.num_constraints
-                col_vector[i] = 1
-                self.col_vectors.append(col_vector)
-                self.variable_types.append('slack')
-                self.variable_names.append(f's{i+1}')
-
-            elif self.ineq[i] == 3:
-                col_vector = [0] * self.num_constraints
-                col_vector[i] = -1
-                self.col_vectors.append(col_vector)
-                self.variable_types.append('surplus')
-                self.variable_names.append(f'sp{i+1}')
-                col_vector = [0] * self.num_constraints
-                col_vector[i] = 1
-                self.col_vectors.append(col_vector)
-                self.variable_types.append('artificial')
-                self.variable_names.append(f'a{i+1}')
-
-            elif self.ineq[i] == 2:
-                col_vector = [0] * self.num_constraints
-                col_vector[i] = 1
-                self.col_vectors.append(col_vector)
-                self.variable_types.append('artificial')
-                self.variable_names.append(f'a{i+1}')
-
-        self.create_simplex_table()
-
-    def is_zero(self, value):
-        return abs(value) < self.tolerance
-
-    def is_positive(self, value):
-        return value > self.tolerance
-
-    def is_negative(self, value):
-        return value < -self.tolerance
-
-    def create_simplex_table(self):
-        self.total_variables = self.num_variables + len(self.col_vectors)
-        self.simplex_table = [[0.0 for _ in range(self.total_variables + 1)] for _ in range(self.num_constraints + 1)]
-
-        for i in range(self.num_constraints):
-            for j in range(self.num_variables):
-                self.simplex_table[i][j] = float(self.constraints[i][j])
-            self.simplex_table[i][-1] = float(self.constraints[i][-1])
-
-        col_idx = self.num_variables
-        for col_vector in self.col_vectors:
-            for i in range(self.num_constraints):
-                self.simplex_table[i][col_idx] = float(col_vector[i])
-            col_idx += 1
-
-        if not self.is_maximization:
-            self.objective_func = [-x for x in self.objective_func]
-
-        for j in range(self.num_variables):
-            self.simplex_table[-1][j] = -float(self.objective_func[j])
-
-        col_idx = self.num_variables
-        for k, var_type in enumerate(self.variable_types[self.num_variables:]):
-            if var_type == 'artificial':
-                self.simplex_table[-1][col_idx] = 99999.999
-            col_idx += 1
-
-        self.basis_variables = []
-        self.non_basis_variables = list(range(self.total_variables))
-
-        col_idx = self.num_variables
-        for i in range(self.num_constraints):
-            if self.ineq[i] == 1:
-                self.basis_variables.append(col_idx)
-                self.non_basis_variables.remove(col_idx)
-                col_idx += 1
-            elif self.ineq[i] == 3:
-                col_idx += 1
-                self.basis_variables.append(col_idx)
-                self.non_basis_variables.remove(col_idx)
-                col_idx += 1
-            elif self.ineq[i] == 2:
-                self.basis_variables.append(col_idx)
-                self.non_basis_variables.remove(col_idx)
-                col_idx += 1
-
-        M = 99999.999
-        for i in range(self.num_constraints):
-            var_idx = self.basis_variables[i]
-            if var_idx < len(self.variable_types) and self.variable_types[var_idx] == 'artificial':
-                for j in range(self.total_variables + 1):
-                    self.simplex_table[-1][j] -= M * self.simplex_table[i][j]
-
-    def get_tableau_string(self):
-        header = ["Basis Variables", "C_B", "XB"] + [self.variable_names[i] for i in range(self.total_variables)] + ["Ratio"]
-        tableau_str = "| " + " | ".join(header) + " |\n"
-        tableau_str += "| " + " | ".join(["-" * len(h) for h in header]) + " |\n"
-
-        ZjCj_row = ["Zj - Cj", "", ""]
-
-        basis_cb = []
-        for i in range(self.num_constraints):
-            basis_index = self.basis_variables[i]
-            if basis_index < self.num_variables:
-                basis_cb.append(self.objective_func[basis_index])
-            elif self.variable_types[basis_index] == 'slack':
-                basis_cb.append(0)
-            elif self.variable_types[basis_index] == 'surplus':
-                basis_cb.append(0)
-            elif self.variable_types[basis_index] == 'artificial':
-                basis_cb.append(99999.999 if not self.is_maximization else -99999.999)
+    def _build_tableau(self):
+        m = len(self.constraints)
+        n = len(self.objective)
+        extra = []  
+        for i, code in enumerate(self.ineq_codes):
+            if code == 1:
+                extra.append(('slack', i))
+            elif code == 3:
+                extra.append(('surplus', i))
+                extra.append(('art', i))
+            elif code == 2:
+                extra.append(('art', i))
             else:
-                basis_cb.append(0) 
+                raise ValueError(f"Unknown inequality code {code}")
+        p = len(extra)
+        # Build var names
+        self.var_names = [f'x{j+1}' for j in range(n)]
+        cnt = {'slack': 0, 'surplus': 0, 'art': 0}
+        for typ, _ in extra:
+            cnt[typ] += 1
+            if typ == 'slack':     self.var_names.append(f's{cnt[typ]}')
+            elif typ == 'surplus': self.var_names.append(f'sp{cnt[typ]}')
+            elif typ == 'art':     self.var_names.append(f'a{cnt[typ]}')
+        # Build tableau rows
+        self.tableau = []
+        for i, row in enumerate(self.constraints):
+            coefs = row[:-1]
+            b = row[-1]
+            new = coefs + [0]*p + [b]
+            for k, (typ, ci) in enumerate(extra):
+                if ci == i:
+                    col = n + k
+                    if typ == 'slack':     new[col] = 1
+                    elif typ == 'surplus': new[col] = -1
+                    elif typ == 'art':     new[col] = 1
+            self.tableau.append(new)
+        # Objective row (last)
+        cols = n + p + 1
+        obj = [0]*cols
+        for j, c in enumerate(self.objective):
+            obj[j] = -c  
+        M = 1e6
+        for k, (typ, _) in enumerate(extra):
+            if typ == 'art': obj[n + k] = -M
+        obj[-1] = 0
+        self.tableau.append(obj)
+        # Basic vars
+        self.basic_vars = []
+        for i in range(m):
+            for k, (typ, ci) in enumerate(extra):
+                if ci == i and typ in ('slack', 'art'):
+                    self.basic_vars.append(self.var_names[n + k])
+                    break
+        self._log_tableau()
 
-        for i in range(self.num_constraints):
-            basis_var_index = self.basis_variables[i]
-            basis_var_name = self.variable_names[basis_var_index]
-            row = [basis_var_name, f"{basis_cb[i]:.2f}", f"{self.simplex_table[i][-1]:.2f}"]
-            for j in range(self.total_variables):
-                row.append(f"{self.simplex_table[i][j]:.2f}")
-            row.append("") 
-            tableau_str += "| " + " | ".join(row) + " |\n"
+    def _compute_zj_cj(self):
+        cols = len(self.tableau[0])
+        # build Cj array (internal maximize)
+        cj = []
+        # originals
+        for c in self.objective:
+            cj.append(c)
+        # extras
+        for name in self.var_names[len(self.objective):]:
+            cj.append(-1e6 if name.startswith('a') else 0)
+        cj.append(0)  # RHS
+        zj = [0]*cols
+        for i, bv in enumerate(self.basic_vars):
+            bi = self.var_names.index(bv)
+            for j in range(cols): zj[j] += cj[bi] * self.tableau[i][j]
+        return [zj[j] - cj[j] for j in range(cols)]
 
-        zj = [0.0] * self.total_variables
-        for j in range(self.total_variables):
-            zj_val = 0
-            for i in range(self.num_constraints):
-                zj_val += basis_cb[i] * self.simplex_table[i][j]
-            zj[j] = zj_val
-            ZjCj_row.append(f"{zj_val - (self.objective_func[j] if j < self.num_variables else 0):.2f}")
-        ZjCj_row.append(f"{sum(basis_cb[i] * self.simplex_table[i][-1] for i in range(self.num_constraints)):.2f}") # Zj for XB
+    def _find_pivot(self):
+        zjcj = self._compute_zj_cj()
+        # entering: most negative
+        candidates = [(v,i) for i,v in enumerate(zjcj[:-1]) if v < -self.tol]
+        if not candidates:
+            return None
+        val, col = min(candidates)
+        # leaving by min ratio
+        ratios = []
+        for i, row in enumerate(self.tableau[:-1]):
+            a = row[col]
+            if a > self.tol:
+                ratios.append((row[-1] / a, i))
+        if not ratios:
+            raise ValueError('Unbounded solution')
+        _, row = min(ratios)
+        return row, col, self.tableau[row][col]
 
-        tableau_str += "| " + " | ".join(ZjCj_row) + " |\n"
-        return tableau_str
+    def _pivot(self, r, c):
+        pv = self.tableau[r][c]
+        self.tableau[r] = [v / pv for v in self.tableau[r]]
+        for i in range(len(self.tableau)):
+            if i == r:
+                continue
+            fac = self.tableau[i][c]
+            self.tableau[i] = [self.tableau[i][j] - fac * self.tableau[r][j]
+                                for j in range(len(self.tableau[0]))]
+        self.basic_vars[r] = self.var_names[c]
 
-    def scale_row(self, row_idx, scale_factor):
-        if self.is_zero(scale_factor):
-            raise ValueError("Scale factor cannot be zero")
-        for j in range(self.total_variables + 1):
-            self.simplex_table[row_idx][j] /= scale_factor
-            if self.is_zero(self.simplex_table[row_idx][j]):
-                self.simplex_table[row_idx][j] = 0.0
-
-    def row_operation(self, target_row, pivot_row, factor):
-        for j in range(self.total_variables + 1):
-            self.simplex_table[target_row][j] -= factor * self.simplex_table[pivot_row][j]
-            if self.is_zero(self.simplex_table[target_row][j]):
-                self.simplex_table[target_row][j] = 0.0
-
-    def pivot(self, pivot_row, pivot_col):
-        pivot_element = self.simplex_table[pivot_row][pivot_col]
-        self.scale_row(pivot_row, pivot_element)
-        for i in range(self.num_constraints + 1):
-            if i != pivot_row:
-                factor = self.simplex_table[i][pivot_col]
-                self.row_operation(i, pivot_row, factor)
-
-        entering_var = pivot_col
-        leaving_var = self.basis_variables[pivot_row]
-        self.basis_variables[pivot_row] = entering_var
-        self.non_basis_variables.remove(entering_var)
-        self.non_basis_variables.append(leaving_var)
-        self.non_basis_variables.sort()
-        return self.variable_names[entering_var], self.variable_names[leaving_var]
-
-    def find_pivot_column(self):
-        pivot_col = -1
-        min_zj_cj = 0.0
-
-        for j in self.non_basis_variables:
-            zj_cj = 0
-            basis_cb = []
-            for i in range(self.num_constraints):
-                basis_index = self.basis_variables[i]
-                if basis_index < self.num_variables:
-                    basis_cb.append(self.objective_func[basis_index])
-                elif self.variable_types[basis_index] == 'slack':
-                    basis_cb.append(0)
-                elif self.variable_types[basis_index] == 'surplus':
-                    basis_cb.append(0)
-                elif self.variable_types[basis_index] == 'artificial':
-                    basis_cb.append(99999.999 if not self.is_maximization else -99999.999)
-                else:
-                    basis_cb.append(0)
-
-            for i in range(self.num_constraints):
-                zj_cj += basis_cb[i] * self.simplex_table[i][j]
-            current_zj_cj = zj_cj - (self.objective_func[j] if j < self.num_variables else 0)
-
-            if current_zj_cj < min_zj_cj - self.tolerance:
-                min_zj_cj = current_zj_cj
-                pivot_col = j
-
-        return pivot_col
-
-    def find_pivot_row(self, pivot_col):
-        min_ratio = float('inf')
-        pivot_row = -1
-
-        for i in range(self.num_constraints):
-            if self.simplex_table[i][pivot_col] > self.tolerance:
-                ratio = self.simplex_table[i][-1] / self.simplex_table[i][pivot_col]
-                if ratio < min_ratio:
-                    min_ratio = ratio
-                    pivot_row = i
-
-        if pivot_row == -1:
-            return -1 
-
-        return pivot_row
+    def _log_tableau(self, pivot_info=None):
+        col_width = 12
+        header = ['BV'] + self.var_names + ['RHS']
+        # Header line
+        lines = [''.join(f"{h:>{col_width}}" for h in header)]
+        # Constraint rows
+        for i, row in enumerate(self.tableau[:-1]):
+            values = row + []  # include RHS at end
+            formatted = [self._fmt(v) for v in values]
+            line = f"{self.basic_vars[i]:>{col_width}}" + ''.join(f"{val:>{col_width}}" for val in formatted)
+            lines.append(line)
+        # Zj-Cj row
+        zjcj = self._compute_zj_cj()
+        formatted_z = [self._fmt(v) for v in zjcj]
+        zj_line = f"{'ZJ-CJ':>{col_width}}" + ''.join(f"{val:>{col_width}}" for val in formatted_z)
+        lines.append(zj_line)
+        # Append to log
+        self.log += "\n".join(lines) + "\n"
+        if pivot_info:
+            pivot_str = f"Pivot:{self._fmt(pivot_info['value'])}, enter={pivot_info['enter']}, leave={pivot_info['leave']}"
+            self.log += f"{pivot_str:^{col_width * len(header)}}\n"
 
     def solve(self):
-        max_iterations = 100
-        iteration = 0
-        self.log += "Initial Tableau:\n" + self.get_tableau_string() + "\n"
-
-        while iteration < max_iterations:
-            pivot_col = self.find_pivot_column()
-
-            if pivot_col == -1:
-                break
-
-            pivot_row = self.find_pivot_row(pivot_col)
-
-            if pivot_row == -1:
-                self.log += "Unbounded solution detected during iteration.\n"
-                return "Unbounded solution"
-
-            entering_element, leaving_element = self.pivot(pivot_row, pivot_col)
-            iteration += 1
-            self.log += f"Iteration {iteration}: Entering variable = {entering_element}, Leaving variable = {leaving_element}\n"
-            self.log += self.get_tableau_string() + "\n"
-
-        self.log += "Final Tableau:\n" + self.get_tableau_string() + "\n"
-
-        for i, basis_var in enumerate(self.basis_variables):
-            var_index = basis_var
-            if var_index < len(self.variable_types) and self.variable_types[var_index] == 'artificial':
-                if self.simplex_table[i][-1] > self.tolerance:
-                    self.log += "Infeasible solution detected: artificial variable remains in basis.\n"
+        it = 0
+        try:
+            while True:
+                p = self._find_pivot()
+                if p is None:
+                    break
+                r, c, val = p
+                leave = self.basic_vars[r]
+                enter = self.var_names[c]
+                self._pivot(r, c)
+                it += 1
+                self._log_tableau({'value': val, 'enter': enter, 'leave': leave})
+            # infeasible check
+            for i, bv in enumerate(self.basic_vars):
+                if bv.startswith('a') and abs(self.tableau[i][-1]) > self.tol:
+                    self.log += "Infeasible solution.\n"
                     return "Infeasible solution"
+            # extract
+            sol = [0]*len(self.orig_objective)
+            for i, bv in enumerate(self.basic_vars):
+                if bv.startswith('x'):
+                    idx = int(bv[1:]) - 1
+                    sol[idx] = self.tableau[i][-1]
+            z_internal = self.tableau[-1][-1]
+            # convert back for minimize
+            z = self.sign * z_internal
+            # log final
+            self.log += "Final Solution:\n"
+            for i, v in enumerate(sol):
+                self.log += f"x{i+1} = {self._fmt(v)}\n"
+            self.log += f"Objective = {self._fmt(z)}\n"
+            basis = [self.var_names.index(b) for b in self.basic_vars]
+            non_basis = [i for i in range(len(self.var_names)) if i not in basis]
+            return {
+                'solution': sol,
+                'objective_value': z,
+                'tableau': self.tableau,
+                'basis_variables': basis,
+                'non_basis_variables': non_basis,
+                'iterations': it,
+                'log': self.log
+            }
+        except ValueError as e:
+            if 'Unbounded' in str(e):
+                self.log += 'Unbounded solution.\n'
+                return 'Unbounded solution'
+            raise
 
-        solution = [0.0] * self.num_variables
-        for i, var in enumerate(self.basis_variables):
-            if var < self.num_variables:
-                solution[var] = self.simplex_table[i][-1]
-
-        objective_value = self.simplex_table[-1][-1]
-        if not self.is_maximization:
-            objective_value = -objective_value
-
-        return {
-            "solution": solution,
-            "objective_value": objective_value,
-            "tableau": self.simplex_table,
-            "basis_variables": self.basis_variables,
-            "non_basis_variables": self.non_basis_variables,
-            "iterations": iteration,
-            "log": self.log
-        }
 
 class SimplexSolverGUI:
     def __init__(self, master):
